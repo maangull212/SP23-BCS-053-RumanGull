@@ -1,0 +1,35 @@
+name: cgpa_calculator
+description: A heavy, multi-semester CGPA calculator app for university students.
+
+publish_to: 'none' 
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.6
+  
+  # Phone pe data save karne ke liye (persistence)
+  shared_preferences: ^2.2.0
+  
+  # Semesters aur subjects ko unique ID dene ke liye
+  uuid: ^4.3.0
+  
+  # "Heavy UI": Charts aur Gauges ke liye
+  fl_chart: ^0.68.0
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
