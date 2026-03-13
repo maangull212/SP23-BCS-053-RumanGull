@@ -1,5 +1,6 @@
-import 'dart:io';
+import 'dart:io' show File, Directory, Platform;
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,10 +11,11 @@ import 'package:uuid/uuid.dart';
 import '../database/db_helper.dart';
 import '../models/patient.dart';
 import '../theme/app_theme.dart';
+import '../widgets/widgets.dart';
 
-/// Safely resolves a storage subdirectory using path_provider via MethodChannel.
-/// Returns null (instead of throwing) when the plugin is not linked yet.
+/// Returns app docs directory path safely (null on web or if plugin not linked).
 Future<String?> _resolveStorageDir(String subFolder) async {
+  if (kIsWeb) return null;
   try {
     const channel = MethodChannel('plugins.flutter.io/path_provider');
     final String? base =
@@ -23,7 +25,7 @@ Future<String?> _resolveStorageDir(String subFolder) async {
     await dir.create(recursive: true);
     return dir.path;
   } on MissingPluginException {
-    return null; // Plugin not linked — caller will show a helpful message
+    return null;
   } catch (_) {
     return null;
   }
@@ -46,7 +48,6 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   bool get _isEditing => widget.patient != null;
   bool _saving = false;
 
-  // Controllers
   final _nameCtrl = TextEditingController();
   final _ageCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -65,38 +66,34 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   DateTime _lastVisit = DateTime.now();
   int _currentStep = 0;
 
-  final List<String> _genders = ['Male', 'Female', 'Other'];
-  final List<String> _bloodGroups = [
-    'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
-  ];
+  final _genders = ['Male', 'Female', 'Other'];
+  final _bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
   @override
   void initState() {
     super.initState();
-    if (_isEditing) _populateFields();
+    if (_isEditing) _populate();
   }
 
-  void _populateFields() {
-    final pat = widget.patient!;
-    _nameCtrl.text = pat.name;
-    _ageCtrl.text = pat.age.toString();
-    _phoneCtrl.text = pat.phone;
-    _emailCtrl.text = pat.email;
-    _addressCtrl.text = pat.address;
-    _historyCtrl.text = pat.medicalHistory;
-    _diagnosisCtrl.text = pat.diagnosis;
-    _medsCtrl.text = pat.medications;
-    _allergiesCtrl.text = pat.allergies;
-    _emergencyCtrl.text = pat.emergencyContact;
-    _gender = pat.gender;
-    _bloodGroup = pat.bloodGroup;
-    _imagePath = pat.imagePath;
-    _lastVisit = pat.lastVisit;
+  void _populate() {
+    final pt = widget.patient!;
+    _nameCtrl.text = pt.name;
+    _ageCtrl.text = pt.age.toString();
+    _phoneCtrl.text = pt.phone;
+    _emailCtrl.text = pt.email;
+    _addressCtrl.text = pt.address;
+    _historyCtrl.text = pt.medicalHistory;
+    _diagnosisCtrl.text = pt.diagnosis;
+    _medsCtrl.text = pt.medications;
+    _allergiesCtrl.text = pt.allergies;
+    _emergencyCtrl.text = pt.emergencyContact;
+    _gender = pt.gender;
+    _bloodGroup = pt.bloodGroup;
+    _imagePath = pt.imagePath;
+    _lastVisit = pt.lastVisit;
     try {
-      _documents = List<String>.from(jsonDecode(pat.documents));
-    } catch (_) {
-      _documents = [];
-    }
+      _documents = List<String>.from(jsonDecode(pt.documents));
+    } catch (_) {}
   }
 
   @override
@@ -152,7 +149,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error saving: $e')));
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -161,6 +158,24 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
 
   // ── Image Picker ──────────────────────────────────────────
   Future<void> _pickImage() async {
+    if (kIsWeb) {
+      // On web, only gallery is supported
+      try {
+        final picked = await ImagePicker()
+            .pickImage(source: ImageSource.gallery, imageQuality: 80);
+        if (picked == null || !mounted) return;
+        // On web, store the XFile path (blob URL) for display only
+        setState(() => _imagePath = picked.path);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Image error: $e')));
+        }
+      }
+      return;
+    }
+
+    // Mobile: show camera/gallery choice
     final src = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -171,22 +186,18 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
                   color: AppTheme.divider,
                   borderRadius: BorderRadius.circular(2)),
             ),
             const Text('Select Photo',
-                style:
-                    TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
-            _sourceBtn(Icons.camera_alt_outlined, 'Take a Photo',
-                ImageSource.camera),
+            _srcBtn(Icons.camera_alt_outlined, 'Take Photo', ImageSource.camera),
             const SizedBox(height: 10),
-            _sourceBtn(Icons.photo_library_outlined, 'Choose from Gallery',
-                ImageSource.gallery),
+            _srcBtn(Icons.photo_library_outlined, 'Gallery', ImageSource.gallery),
           ],
         ),
       ),
@@ -198,18 +209,16 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           .pickImage(source: src, maxWidth: 800, maxHeight: 800, imageQuality: 80);
       if (picked == null) return;
 
-      // Attempt to save a persistent copy; falls back to temp path gracefully
       final destDir = await _resolveStorageDir('patients/img');
       String savedPath;
       if (destDir != null) {
-        final fileName = '${_uuid.v4()}${p.extension(picked.path)}';
-        final saved = await File(picked.path).copy(p.join(destDir, fileName));
+        final fname = '${_uuid.v4()}${p.extension(picked.path)}';
+        final saved = await File(picked.path).copy(p.join(destDir, fname));
         savedPath = saved.path;
       } else {
         savedPath = picked.path;
-        _warnPluginNotLinked();
+        _warnStorage();
       }
-
       setState(() => _imagePath = savedPath);
     } catch (e) {
       if (mounted) {
@@ -219,7 +228,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     }
   }
 
-  Widget _sourceBtn(IconData icon, String label, ImageSource src) {
+  Widget _srcBtn(IconData icon, String label, ImageSource src) {
     return ListTile(
       onTap: () => Navigator.pop(context, src),
       leading: Container(
@@ -230,16 +239,22 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
         child: Icon(icon, color: AppTheme.primary),
       ),
       title: Text(label,
-          style:
-              const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       tileColor: AppTheme.bgLight,
     );
   }
 
   // ── Document Picker ───────────────────────────────────────
   Future<void> _pickDocument() async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('📱 File upload works on mobile/desktop apps'),
+        backgroundColor: AppTheme.info,
+      ));
+      return;
+    }
+
     try {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
@@ -255,15 +270,14 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
         if (file.path == null) continue;
         String finalPath;
         if (destDir != null) {
-          final fileName = '${_uuid.v4()}_${file.name}';
-          final saved =
-              await File(file.path!).copy(p.join(destDir, fileName));
+          final fname = '${_uuid.v4()}_${file.name}';
+          final saved = await File(file.path!).copy(p.join(destDir, fname));
           finalPath = saved.path;
         } else {
           finalPath = file.path!;
           if (!warned) {
             warned = true;
-            _warnPluginNotLinked();
+            _warnStorage();
           }
         }
         setState(() => _documents.add(finalPath));
@@ -276,13 +290,12 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     }
   }
 
-  void _warnPluginNotLinked() {
+  void _warnStorage() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text(
-          '⚠️ Fix: run  flutter clean && flutter pub get && flutter run'),
-      duration: Duration(seconds: 5),
+      content: Text('Run: flutter clean && flutter pub get && flutter run'),
       backgroundColor: AppTheme.warning,
+      duration: Duration(seconds: 4),
     ));
   }
 
@@ -295,9 +308,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme:
-              const ColorScheme.light(primary: AppTheme.primary),
-        ),
+            colorScheme: const ColorScheme.light(primary: AppTheme.primary)),
         child: child!,
       ),
     );
@@ -319,17 +330,14 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
                 currentStep: _currentStep,
                 onStepTapped: (i) => setState(() => _currentStep = i),
                 onStepContinue: () {
-                  if (_currentStep < 2) {
-                    setState(() => _currentStep++);
-                  } else {
-                    _save();
-                  }
+                  if (_currentStep < 2) setState(() => _currentStep++);
+                  else _save();
                 },
                 onStepCancel: () {
                   if (_currentStep > 0) setState(() => _currentStep--);
                 },
-                controlsBuilder: (_, d) => _stepControls(d),
-                steps: [_buildStep1(), _buildStep2(), _buildStep3()],
+                controlsBuilder: (_, d) => _controls(d),
+                steps: [_step1(), _step2(), _step3()],
               ),
             ),
           ),
@@ -338,57 +346,51 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  SliverAppBar _buildAppBar() {
-    return SliverAppBar(
-      pinned: true,
-      backgroundColor: AppTheme.primary,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-            color: Colors.white),
-        onPressed: () => Navigator.pop(context),
-      ),
-      title: Text(
-        _isEditing ? 'Edit Patient' : 'New Patient',
-        style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700),
-      ),
-      actions: [
-        if (_saving)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2)),
+  SliverAppBar _buildAppBar() => SliverAppBar(
+        pinned: true,
+        backgroundColor: AppTheme.primary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          _isEditing ? 'Edit Patient' : 'New Patient',
+          style: const TextStyle(
+              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        actions: [
+          if (_saving)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2)),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: _save,
+              child: const Text('Save',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15)),
             ),
-          )
-        else
-          TextButton(
-            onPressed: _save,
-            child: const Text('Save',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15)),
-          ),
-      ],
-    );
-  }
+        ],
+      );
 
-  Widget _stepControls(ControlsDetails d) {
-    final isLast = _currentStep == 2;
+  Widget _controls(ControlsDetails d) {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Row(
         children: [
           ElevatedButton(
-            onPressed: d.onStepContinue,
-            child: Text(isLast ? 'Save Patient' : 'Continue'),
-          ),
+              onPressed: d.onStepContinue,
+              child: Text(_currentStep == 2 ? 'Save Patient' : 'Continue')),
           if (_currentStep > 0) ...[
             const SizedBox(width: 12),
             OutlinedButton(
@@ -399,26 +401,24 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  // ── Step 1 ────────────────────────────────────────────────
-  Step _buildStep1() {
-    return Step(
-      title: const Text('Personal Info',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-      isActive: _currentStep >= 0,
-      state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-      content: Column(
-        children: [
+  // ── Step 1: Personal ─────────────────────────────────────
+  Step _step1() => Step(
+        title: const Text('Personal Info',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        isActive: _currentStep >= 0,
+        state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+        content: Column(children: [
           Center(child: _photoWidget()),
           const SizedBox(height: 20),
           _field('Full Name', _nameCtrl, Icons.person_outline,
               validator: (v) =>
-                  v == null || v.isEmpty ? 'Name is required' : null),
+                  v == null || v.isEmpty ? 'Required' : null),
           const SizedBox(height: 14),
           Row(children: [
             Expanded(
               child: _field('Age', _ageCtrl, Icons.cake_outlined,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  keyboard: TextInputType.number,
+                  fmt: [FilteringTextInputFormatter.digitsOnly],
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Required';
                     final a = int.tryParse(v);
@@ -428,61 +428,52 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
             ),
             const SizedBox(width: 12),
             Expanded(
-                child: _dropdown('Gender', _gender, _genders,
+                child: _drop('Gender', _gender, _genders,
                     (v) => setState(() => _gender = v!))),
           ]),
           const SizedBox(height: 14),
           Row(children: [
             Expanded(
               child: _field('Phone', _phoneCtrl, Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                  validator: (v) => v == null || v.isEmpty
-                      ? 'Phone is required'
-                      : null),
+                  keyboard: TextInputType.phone,
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Required' : null),
             ),
             const SizedBox(width: 12),
             Expanded(
-                child: _dropdown('Blood Group', _bloodGroup, _bloodGroups,
+                child: _drop('Blood Group', _bloodGroup, _bloodGroups,
                     (v) => setState(() => _bloodGroup = v!))),
           ]),
           const SizedBox(height: 14),
           _field('Email', _emailCtrl, Icons.email_outlined,
-              keyboardType: TextInputType.emailAddress),
+              keyboard: TextInputType.emailAddress),
           const SizedBox(height: 14),
-          _field('Address', _addressCtrl, Icons.home_outlined, maxLines: 2),
+          _field('Address', _addressCtrl, Icons.home_outlined, lines: 2),
           const SizedBox(height: 14),
-          _field('Emergency Contact', _emergencyCtrl,
-              Icons.emergency_outlined),
+          _field('Emergency Contact', _emergencyCtrl, Icons.emergency_outlined),
           const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
+        ]),
+      );
 
-  // ── Step 2 ────────────────────────────────────────────────
-  Step _buildStep2() {
-    return Step(
-      title: const Text('Medical Info',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-      isActive: _currentStep >= 1,
-      state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-      content: Column(
-        children: [
+  // ── Step 2: Medical ──────────────────────────────────────
+  Step _step2() => Step(
+        title: const Text('Medical Info',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        isActive: _currentStep >= 1,
+        state: _currentStep > 1 ? StepState.complete : StepState.indexed,
+        content: Column(children: [
           _field('Diagnosis', _diagnosisCtrl,
-              Icons.medical_information_outlined,
-              maxLines: 2),
+              Icons.medical_information_outlined, lines: 2),
           const SizedBox(height: 14),
           _field('Medical History', _historyCtrl,
-              Icons.history_edu_outlined,
-              maxLines: 3),
+              Icons.history_edu_outlined, lines: 3),
           const SizedBox(height: 14),
           _field('Medications', _medsCtrl, Icons.medication_outlined,
-              maxLines: 3,
-              hintText:
-                  'e.g. Aspirin 81mg daily, Metformin 500mg twice daily'),
+              lines: 3,
+              hint: 'e.g. Aspirin 81mg daily'),
           const SizedBox(height: 14),
           _field('Allergies', _allergiesCtrl, Icons.warning_amber_outlined,
-              hintText: 'e.g. Penicillin, Sulfa drugs'),
+              hint: 'e.g. Penicillin'),
           const SizedBox(height: 14),
           GestureDetector(
             onTap: _pickDate,
@@ -494,103 +485,101 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppTheme.divider),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today_outlined,
-                      size: 18, color: AppTheme.textLight),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Last Visit',
-                            style: TextStyle(
-                                fontSize: 11, color: AppTheme.textLight)),
-                        Text(
-                          DateFormat('MMMM d, yyyy').format(_lastVisit),
+              child: Row(children: [
+                const Icon(Icons.calendar_today_outlined,
+                    size: 18, color: AppTheme.textLight),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Last Visit',
+                          style: TextStyle(
+                              fontSize: 11, color: AppTheme.textLight)),
+                      Text(DateFormat('MMMM d, yyyy').format(_lastVisit),
                           style: const TextStyle(
                               fontSize: 14,
                               color: AppTheme.textDark,
-                              fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
+                              fontWeight: FontWeight.w500)),
+                    ],
                   ),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: AppTheme.textLight),
-                ],
-              ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppTheme.textLight),
+              ]),
             ),
           ),
           const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
+        ]),
+      );
 
-  // ── Step 3 ────────────────────────────────────────────────
-  Step _buildStep3() {
-    return Step(
-      title: const Text('Documents',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-      isActive: _currentStep >= 2,
-      state: StepState.indexed,
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Upload patient documents (PDFs, images, reports)',
-            style: TextStyle(fontSize: 12, color: AppTheme.textLight),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _pickDocument,
-            icon: const Icon(Icons.upload_file_rounded, size: 18),
-            label: const Text('Upload Document'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 46),
-              side: const BorderSide(color: AppTheme.primary, width: 1.5),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+  // ── Step 3: Documents ─────────────────────────────────────
+  Step _step3() => Step(
+        title: const Text('Documents',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        isActive: _currentStep >= 2,
+        state: StepState.indexed,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              kIsWeb
+                  ? '📱 Document upload is available in the mobile app'
+                  : 'Upload patient documents (PDF, images)',
+              style:
+                  const TextStyle(fontSize: 12, color: AppTheme.textLight),
             ),
-          ),
-          const SizedBox(height: 12),
-          if (_documents.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTheme.bgLight,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.divider),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _pickDocument,
+              icon: const Icon(Icons.upload_file_rounded, size: 18),
+              label: Text(kIsWeb ? 'Not available on web' : 'Upload Document'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 46),
+                side: const BorderSide(color: AppTheme.primary, width: 1.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Center(
-                child: Column(children: [
-                  Icon(Icons.folder_open_outlined,
-                      size: 36, color: AppTheme.textLight),
-                  SizedBox(height: 8),
-                  Text('No documents uploaded',
-                      style: TextStyle(
-                          fontSize: 13, color: AppTheme.textLight)),
-                ]),
-              ),
-            )
-          else
-            Column(
-              children: _documents
-                  .asMap()
-                  .entries
-                  .map((e) => _docTile(e.key, e.value))
-                  .toList(),
             ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
+            const SizedBox(height: 12),
+            if (_documents.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.bgLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.divider),
+                ),
+                child: const Center(
+                  child: Column(children: [
+                    Icon(Icons.folder_open_outlined,
+                        size: 36, color: AppTheme.textLight),
+                    SizedBox(height: 8),
+                    Text('No documents uploaded',
+                        style: TextStyle(
+                            fontSize: 13, color: AppTheme.textLight)),
+                  ]),
+                ),
+              )
+            else
+              Column(
+                children: _documents
+                    .asMap()
+                    .entries
+                    .map((e) => _docTile(e.key, e.value))
+                    .toList(),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
 
   Widget _docTile(int index, String filePath) {
-    final name = p.basename(filePath);
-    final ext = p.extension(filePath).toLowerCase();
+    final parts = filePath.replaceAll('\\', '/').split('/');
+    final name = parts.isNotEmpty ? parts.last : filePath;
+    final ext = name.contains('.')
+        ? '.${name.split('.').last.toLowerCase()}'
+        : '';
     final isImage = ['.jpg', '.jpeg', '.png'].contains(ext);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -600,41 +589,41 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppTheme.divider),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-                color: AppTheme.primaryLighter,
-                borderRadius: BorderRadius.circular(8)),
-            child: Icon(
-              isImage ? Icons.image_outlined : Icons.picture_as_pdf_outlined,
-              size: 18,
-              color: AppTheme.primary,
-            ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+              color: AppTheme.primaryLighter,
+              borderRadius: BorderRadius.circular(8)),
+          child: Icon(
+            isImage ? Icons.image_outlined : Icons.picture_as_pdf_outlined,
+            size: 18,
+            color: AppTheme.primary,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(name,
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textDark,
-                    fontWeight: FontWeight.w500),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close_rounded,
-                size: 18, color: AppTheme.danger),
-            onPressed: () => setState(() => _documents.removeAt(index)),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(name,
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textDark,
+                  fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        ),
+        IconButton(
+          icon: const Icon(Icons.close_rounded,
+              size: 18, color: AppTheme.danger),
+          onPressed: () => setState(() => _documents.removeAt(index)),
+        ),
+      ]),
     );
   }
 
   // ── Photo Widget ──────────────────────────────────────────
   Widget _photoWidget() {
+    final imgProvider = safeFileImage(_imagePath);
+
     return GestureDetector(
       onTap: _pickImage,
       child: Stack(
@@ -644,18 +633,16 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
             height: 90,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              gradient: _imagePath == null
+              gradient: imgProvider == null
                   ? const LinearGradient(
                       colors: [AppTheme.primary, AppTheme.primaryLight])
                   : null,
-              image: _imagePath != null
-                  ? DecorationImage(
-                      image: FileImage(File(_imagePath!)),
-                      fit: BoxFit.cover)
+              image: imgProvider != null
+                  ? DecorationImage(image: imgProvider, fit: BoxFit.cover)
                   : null,
               boxShadow: AppTheme.cardShadow,
             ),
-            child: _imagePath == null
+            child: imgProvider == null
                 ? const Center(
                     child: Icon(Icons.person, color: Colors.white, size: 40))
                 : null,
@@ -669,8 +656,11 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
                   color: AppTheme.accent,
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2)),
-              child: const Icon(Icons.camera_alt_rounded,
-                  size: 14, color: Colors.white),
+              child: Icon(
+                kIsWeb ? Icons.photo_library_outlined : Icons.camera_alt_rounded,
+                size: 14,
+                color: Colors.white,
+              ),
             ),
           ),
         ],
@@ -678,40 +668,39 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────────
+  // ── Field helpers ─────────────────────────────────────────
   Widget _field(
     String label,
     TextEditingController ctrl,
     IconData icon, {
-    int maxLines = 1,
-    TextInputType? keyboardType,
-    List<TextInputFormatter>? inputFormatters,
+    int lines = 1,
+    TextInputType? keyboard,
+    List<TextInputFormatter>? fmt,
     String? Function(String?)? validator,
-    String? hintText,
+    String? hint,
   }) {
     return TextFormField(
       controller: ctrl,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
+      maxLines: lines,
+      keyboardType: keyboard,
+      inputFormatters: fmt,
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
-        hintText: hintText,
+        hintText: hint,
         prefixIcon: Icon(icon, size: 18, color: AppTheme.textLight),
       ),
     );
   }
 
-  Widget _dropdown(String label, String value, List<String> items,
-      void Function(String?) onChanged) {
+  Widget _drop(String label, String value, List<String> items,
+      void Function(String?) onChange) {
     return DropdownButtonFormField<String>(
       value: value,
-      onChanged: onChanged,
+      onChanged: onChange,
       decoration: InputDecoration(labelText: label),
       borderRadius: BorderRadius.circular(12),
-      items:
-          items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+      items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
     );
   }
 }

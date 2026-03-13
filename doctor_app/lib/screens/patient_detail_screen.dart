@@ -1,9 +1,8 @@
-import 'dart:io';
+import 'dart:io' show File;
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:path/path.dart' as p;
 import '../database/db_helper.dart';
 import '../models/patient.dart';
 import '../theme/app_theme.dart';
@@ -50,16 +49,13 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+          body: Center(child: CircularProgressIndicator()));
     }
     if (_patient == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Patient Not Found')),
-        body: const Center(child: Text('Patient record was not found.')),
-      );
+          appBar: AppBar(title: const Text('Not Found')),
+          body: const Center(child: Text('Patient record not found.')));
     }
-
     return Scaffold(
       backgroundColor: AppTheme.bgLight,
       body: NestedScrollView(
@@ -80,6 +76,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
   SliverAppBar _buildAppBar() {
     final p = _patient!;
     final bloodColor = AppTheme.bloodColors[p.bloodGroup] ?? AppTheme.primary;
+    final imgProvider = safeFileImage(p.imagePath);
 
     return SliverAppBar(
       expandedHeight: 240,
@@ -92,13 +89,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.edit_outlined, color: Colors.white),
-          onPressed: _edit,
-        ),
+            icon: const Icon(Icons.edit_outlined, color: Colors.white),
+            onPressed: _edit),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert, color: Colors.white),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           itemBuilder: (_) => [
             PopupMenuItem(
               value: 'delete',
@@ -118,64 +114,82 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
       ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
-          decoration: const BoxDecoration(gradient: AppTheme.cardGradient),
+          decoration:
+              const BoxDecoration(gradient: AppTheme.cardGradient),
           child: SafeArea(
             child: Padding(
-              padding:
-                  const EdgeInsets.fromLTRB(20, 60, 20, 16),
+              padding: const EdgeInsets.fromLTRB(20, 60, 20, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       // Avatar
-                      _buildAvatar(p, bloodColor),
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.4),
+                              width: 2),
+                          gradient: imgProvider == null
+                              ? LinearGradient(colors: [
+                                  Colors.white.withOpacity(0.3),
+                                  Colors.white.withOpacity(0.1)
+                                ])
+                              : null,
+                          image: imgProvider != null
+                              ? DecorationImage(
+                                  image: imgProvider, fit: BoxFit.cover)
+                              : null,
+                        ),
+                        child: imgProvider == null
+                            ? Center(
+                                child: Text(p.initials,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w800)))
+                            : null,
+                      ),
                       const SizedBox(width: 16),
-                      // Info
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              p.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                            Text(p.name,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800)),
                             const SizedBox(height: 4),
-                            Row(
+                            Wrap(
+                              spacing: 6,
                               children: [
                                 _badge('${p.age} yrs',
                                     Colors.white.withOpacity(0.2)),
-                                const SizedBox(width: 6),
                                 _badge(p.gender,
                                     Colors.white.withOpacity(0.2)),
-                                const SizedBox(width: 6),
                                 _badge(p.bloodGroup, bloodColor),
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Icon(Icons.phone_outlined,
-                                    size: 13, color: Colors.white70),
-                                const SizedBox(width: 4),
-                                Text(
-                                  p.phone,
+                            Row(children: [
+                              const Icon(Icons.phone_outlined,
+                                  size: 13, color: Colors.white70),
+                              const SizedBox(width: 4),
+                              Text(p.phone,
                                   style: const TextStyle(
-                                      color: Colors.white70, fontSize: 13),
-                                ),
-                              ],
-                            ),
+                                      color: Colors.white70,
+                                      fontSize: 13)),
+                            ]),
                           ],
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Last visit chip
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
@@ -211,8 +225,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
         indicatorWeight: 3,
         labelColor: Colors.white,
         unselectedLabelColor: Colors.white60,
-        labelStyle: const TextStyle(
-            fontSize: 13, fontWeight: FontWeight.w600),
+        labelStyle:
+            const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         tabs: const [
           Tab(text: 'Overview'),
           Tab(text: 'Medical'),
@@ -222,55 +236,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
     );
   }
 
-  Widget _buildAvatar(Patient pat, Color bloodColor) {
-    return Container(
-      width: 72,
-      height: 72,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.4), width: 2),
-        gradient: pat.imagePath == null
-            ? LinearGradient(
-                colors: [
-                  Colors.white.withOpacity(0.3),
-                  Colors.white.withOpacity(0.1)
-                ],
-              )
-            : null,
-        image: pat.imagePath != null
-            ? DecorationImage(
-                image: FileImage(File(pat.imagePath!)),
-                fit: BoxFit.cover,
-              )
-            : null,
-      ),
-      child: pat.imagePath == null
-          ? Center(
-              child: Text(
-                pat.initials,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            )
-          : null,
-    );
-  }
-
   Widget _badge(String label, Color bg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-            color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-      ),
+          color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Text(label,
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600)),
     );
   }
 
@@ -282,14 +257,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
       children: [
         _card('Contact Information', [
           InfoTile(
-              icon: Icons.phone_outlined,
-              label: 'Phone',
-              value: pat.phone),
+              icon: Icons.phone_outlined, label: 'Phone', value: pat.phone),
           const Divider(),
           InfoTile(
-              icon: Icons.email_outlined,
-              label: 'Email',
-              value: pat.email),
+              icon: Icons.email_outlined, label: 'Email', value: pat.email),
           const Divider(),
           InfoTile(
               icon: Icons.home_outlined,
@@ -315,11 +286,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
               value: pat.gender),
           const Divider(),
           InfoTile(
-            icon: Icons.bloodtype_outlined,
-            label: 'Blood Group',
-            value: pat.bloodGroup,
-            iconColor: AppTheme.bloodColors[pat.bloodGroup],
-          ),
+              icon: Icons.bloodtype_outlined,
+              label: 'Blood Group',
+              value: pat.bloodGroup,
+              iconColor: AppTheme.bloodColors[pat.bloodGroup]),
           const Divider(),
           InfoTile(
               icon: Icons.calendar_today_outlined,
@@ -333,73 +303,55 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
   // ── Medical Tab ───────────────────────────────────────────
   Widget _buildMedicalTab() {
     final pat = _patient!;
+    final sections = [
+      if (pat.diagnosis.isNotEmpty)
+        _textCard('Current Diagnosis', pat.diagnosis,
+            Icons.medical_information_outlined, AppTheme.info),
+      if (pat.medicalHistory.isNotEmpty)
+        _textCard('Medical History', pat.medicalHistory,
+            Icons.history_edu_outlined, AppTheme.primary),
+      if (pat.medications.isNotEmpty)
+        _textCard('Current Medications', pat.medications,
+            Icons.medication_outlined, AppTheme.success),
+      if (pat.allergies.isNotEmpty)
+        _textCard('Known Allergies', pat.allergies,
+            Icons.warning_amber_outlined, AppTheme.warning),
+    ];
+
+    if (sections.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.medical_information_outlined,
+                  size: 48, color: AppTheme.textLight),
+              const SizedBox(height: 12),
+              const Text('No medical records yet',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textDark)),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _edit,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Edit Patient'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        if (pat.diagnosis.isNotEmpty)
-          _textCard(
-            'Current Diagnosis',
-            pat.diagnosis,
-            Icons.medical_information_outlined,
-            AppTheme.info,
-          ),
-        const SizedBox(height: 12),
-        if (pat.medicalHistory.isNotEmpty)
-          _textCard(
-            'Medical History',
-            pat.medicalHistory,
-            Icons.history_edu_outlined,
-            AppTheme.primary,
-          ),
-        const SizedBox(height: 12),
-        if (pat.medications.isNotEmpty)
-          _textCard(
-            'Current Medications',
-            pat.medications,
-            Icons.medication_outlined,
-            AppTheme.success,
-          ),
-        const SizedBox(height: 12),
-        if (pat.allergies.isNotEmpty)
-          _textCard(
-            'Known Allergies',
-            pat.allergies,
-            Icons.warning_amber_outlined,
-            AppTheme.warning,
-          ),
-        if ([
-          pat.diagnosis,
-          pat.medicalHistory,
-          pat.medications,
-          pat.allergies
-        ].every((s) => s.isEmpty))
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(40),
-              child: Column(
-                children: [
-                  const Icon(Icons.medical_information_outlined,
-                      size: 48, color: AppTheme.textLight),
-                  const SizedBox(height: 12),
-                  const Text('No medical records yet',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textDark)),
-                  const SizedBox(height: 6),
-                  const Text('Edit patient to add medical info',
-                      style: TextStyle(
-                          fontSize: 13, color: AppTheme.textLight)),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: _edit,
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Edit Patient'),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        for (int i = 0; i < sections.length; i++) ...[
+          sections[i],
+          if (i < sections.length - 1) const SizedBox(height: 12),
+        ]
       ],
     );
   }
@@ -411,48 +363,71 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
       docs = List<String>.from(jsonDecode(_patient!.documents));
     } catch (_) {}
 
-    return docs.isEmpty
-        ? Center(
-            child: Padding(
-              padding: const EdgeInsets.all(40),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.folder_open_outlined,
-                      size: 48, color: AppTheme.textLight),
-                  const SizedBox(height: 12),
-                  const Text('No documents uploaded',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textDark)),
-                  const SizedBox(height: 6),
-                  const Text('Edit patient to upload documents',
-                      style: TextStyle(
-                          fontSize: 13, color: AppTheme.textLight)),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: _edit,
-                    icon: const Icon(Icons.upload_file_rounded, size: 16),
-                    label: const Text('Upload Documents'),
-                  ),
-                ],
+    if (docs.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.folder_open_outlined,
+                  size: 48, color: AppTheme.textLight),
+              const SizedBox(height: 12),
+              const Text('No documents uploaded',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textDark)),
+              const SizedBox(height: 6),
+              Text(
+                kIsWeb
+                    ? 'Document upload is available on mobile/desktop'
+                    : 'Edit patient to upload documents',
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textLight),
+                textAlign: TextAlign.center,
               ),
-            ),
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.all(20),
-            itemCount: docs.length,
-            itemBuilder: (_, i) => _docCard(docs[i]),
-          );
+              if (!kIsWeb) ...[
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _edit,
+                  icon: const Icon(Icons.upload_file_rounded, size: 16),
+                  label: const Text('Upload Documents'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: docs.length,
+      itemBuilder: (_, i) => _docCard(docs[i]),
+    );
   }
 
   Widget _docCard(String filePath) {
-    final name = p.basename(filePath);
-    final ext = p.extension(filePath).toLowerCase();
+    // Extract file name from path
+    final parts = filePath.replaceAll('\\', '/').split('/');
+    final name = parts.isNotEmpty ? parts.last : filePath;
+    final ext = name.contains('.')
+        ? '.${name.split('.').last.toLowerCase()}'
+        : '';
     final isImage = ['.jpg', '.jpeg', '.png'].contains(ext);
-    final file = File(filePath);
-    final exists = file.existsSync();
+
+    // Check if file physically exists (only on non-web)
+    bool exists = kIsWeb ? false : false;
+    ImageProvider? thumb;
+    if (!kIsWeb) {
+      try {
+        exists = File(filePath).existsSync();
+        if (exists && isImage) {
+          thumb = FileImage(File(filePath));
+        }
+      } catch (_) {}
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -463,7 +438,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
         boxShadow: AppTheme.cardShadow,
       ),
       child: ListTile(
-        onTap: exists ? () => OpenFilex.open(filePath) : null,
+        onTap: kIsWeb || !exists
+            ? null
+            : () async {
+                try {
+                  // On mobile, show a dialog — open_filex removed for simplicity
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('File: $filePath')),
+                  );
+                } catch (_) {}
+              },
         leading: Container(
           width: 44,
           height: 44,
@@ -472,14 +456,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
             color: isImage
                 ? AppTheme.info.withOpacity(0.1)
                 : AppTheme.danger.withOpacity(0.1),
-            image: isImage && exists
-                ? DecorationImage(
-                    image: FileImage(file),
-                    fit: BoxFit.cover,
-                  )
+            image: thumb != null
+                ? DecorationImage(image: thumb, fit: BoxFit.cover)
                 : null,
           ),
-          child: (!isImage || !exists)
+          child: thumb == null
               ? Icon(
                   isImage
                       ? Icons.image_outlined
@@ -489,32 +470,29 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
                 )
               : null,
         ),
-        title: Text(
-          name,
-          style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textDark),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(name,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textDark),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
         subtitle: Text(
-          exists ? 'Tap to open' : 'File not found',
+          kIsWeb
+              ? 'Stored on mobile device'
+              : (exists ? 'Tap to view path' : 'File not found'),
           style: TextStyle(
             fontSize: 11,
-            color: exists ? AppTheme.textLight : AppTheme.danger,
+            color: kIsWeb
+                ? AppTheme.textLight
+                : (exists ? AppTheme.textLight : AppTheme.danger),
           ),
         ),
-        trailing: exists
-            ? const Icon(Icons.open_in_new_rounded,
-                size: 16, color: AppTheme.textLight)
-            : const Icon(Icons.error_outline_rounded,
-                size: 16, color: AppTheme.danger),
       ),
     );
   }
 
-  // ── Card Helpers ──────────────────────────────────────────
+  // ── Card helpers ──────────────────────────────────────────
   Widget _card(String title, List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
@@ -528,14 +506,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textDark,
-              ),
-            ),
+            child: Text(title,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark)),
           ),
           const Divider(height: 1),
           Padding(
@@ -566,20 +541,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8)),
                   child: Icon(icon, size: 16, color: color),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textDark,
-                  ),
-                ),
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark)),
               ],
             ),
           ),
@@ -588,18 +559,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             decoration: BoxDecoration(
               color: color.withOpacity(0.04),
-              borderRadius:
-                  const BorderRadius.vertical(bottom: Radius.circular(16)),
-              border: Border(top: BorderSide(color: color.withOpacity(0.1))),
+              borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(16)),
+              border:
+                  Border(top: BorderSide(color: color.withOpacity(0.1))),
             ),
-            child: Text(
-              content,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.textMid,
-                height: 1.6,
-              ),
-            ),
+            child: Text(content,
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textMid, height: 1.6)),
           ),
         ],
       ),
@@ -619,19 +586,19 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete Patient'),
-        content:
-            Text('Permanently remove ${_patient!.name}? This cannot be undone.'),
+        content: Text(
+            'Permanently remove ${_patient!.name}? This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.danger),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
             child: const Text('Delete'),
           ),
         ],
@@ -641,8 +608,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen>
       await _db.hardDeletePatient(_patient!.id!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Patient deleted')),
-        );
+            const SnackBar(content: Text('Patient deleted')));
         Navigator.pop(context);
       }
     }

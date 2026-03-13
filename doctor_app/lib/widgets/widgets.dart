@@ -1,8 +1,20 @@
-import 'dart:io';
+import 'dart:io' show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/patient.dart';
 import '../theme/app_theme.dart';
+
+// ── Safe image provider ────────────────────────────────────
+// Returns FileImage on mobile, null on web (shows initials instead)
+ImageProvider? safeFileImage(String? path) {
+  if (kIsWeb || path == null) return null;
+  try {
+    return FileImage(File(path));
+  } catch (_) {
+    return null;
+  }
+}
 
 // ════════════════════════════════════════════════════════════
 // Patient Card
@@ -25,11 +37,12 @@ class PatientCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bloodColor =
         AppTheme.bloodColors[patient.bloodGroup] ?? AppTheme.primary;
+    final img = safeFileImage(patient.imagePath);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0),
+        margin: const EdgeInsets.symmetric(vertical: 5),
         decoration: BoxDecoration(
           color: AppTheme.cardBg,
           borderRadius: BorderRadius.circular(16),
@@ -42,25 +55,21 @@ class PatientCard extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
-                  // Avatar
-                  _buildAvatar(bloodColor),
+                  _avatar(img, bloodColor),
                   const SizedBox(width: 14),
-                  // Info
-                  Expanded(child: _buildInfo(context)),
-                  // Menu
-                  _buildMenu(context),
+                  Expanded(child: _info()),
+                  _menu(context),
                 ],
               ),
             ),
-            // Footer bar
-            _buildFooter(bloodColor),
+            _footer(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAvatar(Color bloodColor) {
+  Widget _avatar(ImageProvider? img, Color bloodColor) {
     return Stack(
       children: [
         Container(
@@ -68,7 +77,7 @@ class PatientCard extends StatelessWidget {
           height: 56,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            gradient: patient.imagePath == null
+            gradient: img == null
                 ? LinearGradient(
                     colors: [
                       AppTheme.primary.withOpacity(0.8),
@@ -78,125 +87,106 @@ class PatientCard extends StatelessWidget {
                     end: Alignment.bottomRight,
                   )
                 : null,
-            image: patient.imagePath != null
-                ? DecorationImage(
-                    image: FileImage(File(patient.imagePath!)),
-                    fit: BoxFit.cover,
-                  )
+            image: img != null
+                ? DecorationImage(image: img, fit: BoxFit.cover)
                 : null,
           ),
-          child: patient.imagePath == null
+          child: img == null
               ? Center(
-                  child: Text(
-                    patient.initials,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: Text(patient.initials,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700)),
                 )
               : null,
         ),
-        // Blood group badge
         Positioned(
           bottom: -2,
           right: -2,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
             decoration: BoxDecoration(
               color: bloodColor,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: Colors.white, width: 1.5),
             ),
-            child: Text(
-              patient.bloodGroup,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: Text(patient.bloodGroup,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700)),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildInfo(BuildContext context) {
+  Widget _info() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          patient.name,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textDark,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        Text(patient.name,
+            style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textDark),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
         const SizedBox(height: 3),
-        Row(
-          children: [
-            _chip(Icons.person_outline, '${patient.age}y', AppTheme.primary),
-            const SizedBox(width: 6),
-            _chip(
-              patient.gender == 'Male' ? Icons.male : Icons.female,
-              patient.gender,
-              patient.gender == 'Male' ? AppTheme.info : AppTheme.accentGold,
-            ),
-          ],
-        ),
+        Row(children: [
+          _chip(Icons.person_outline, '${patient.age}y', AppTheme.primary),
+          const SizedBox(width: 6),
+          _chip(
+            patient.gender == 'Male' ? Icons.male : Icons.female,
+            patient.gender,
+            patient.gender == 'Male' ? AppTheme.info : AppTheme.accentGold,
+          ),
+        ]),
         const SizedBox(height: 5),
-        Row(
-          children: [
-            const Icon(Icons.phone_outlined,
-                size: 12, color: AppTheme.textLight),
-            const SizedBox(width: 3),
-            Text(
-              patient.phone,
-              style: const TextStyle(fontSize: 12, color: AppTheme.textMid),
-            ),
-          ],
-        ),
+        Row(children: [
+          const Icon(Icons.phone_outlined,
+              size: 12, color: AppTheme.textLight),
+          const SizedBox(width: 3),
+          Text(patient.phone,
+              style:
+                  const TextStyle(fontSize: 12, color: AppTheme.textMid)),
+        ]),
         if (patient.diagnosis.isNotEmpty) ...[
           const SizedBox(height: 3),
-          Text(
-            patient.diagnosis,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppTheme.textLight,
-              fontStyle: FontStyle.italic,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          Text(patient.diagnosis,
+              style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textLight,
+                  fontStyle: FontStyle.italic),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
         ],
       ],
     );
   }
 
-  Widget _buildMenu(BuildContext context) {
+  Widget _menu(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: AppTheme.textLight, size: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      icon:
+          const Icon(Icons.more_vert, color: AppTheme.textLight, size: 20),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 4,
       itemBuilder: (_) => [
         PopupMenuItem(
-          value: 'view',
-          child: _menuItem(Icons.visibility_outlined, 'View Details',
-              AppTheme.primary),
-        ),
+            value: 'view',
+            child: _menuItem(Icons.visibility_outlined, 'View Details',
+                AppTheme.primary)),
         PopupMenuItem(
-          value: 'edit',
-          child: _menuItem(Icons.edit_outlined, 'Edit', AppTheme.info),
-        ),
+            value: 'edit',
+            child: _menuItem(
+                Icons.edit_outlined, 'Edit', AppTheme.info)),
         PopupMenuItem(
-          value: 'delete',
-          child: _menuItem(Icons.delete_outlined, 'Delete', AppTheme.danger),
-        ),
+            value: 'delete',
+            child: _menuItem(
+                Icons.delete_outlined, 'Delete', AppTheme.danger)),
       ],
       onSelected: (val) {
         if (val == 'view') onTap();
@@ -206,39 +196,39 @@ class PatientCard extends StatelessWidget {
     );
   }
 
-  Widget _buildFooter(Color bloodColor) {
+  Widget _footer() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppTheme.bgLight,
         borderRadius:
-            const BorderRadius.vertical(bottom: Radius.circular(16)),
-        border: const Border(top: BorderSide(color: AppTheme.divider)),
+            BorderRadius.vertical(bottom: Radius.circular(16)),
+        border: Border(top: BorderSide(color: AppTheme.divider)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.access_time, size: 12, color: AppTheme.textLight),
+          const Icon(Icons.access_time,
+              size: 12, color: AppTheme.textLight),
           const SizedBox(width: 4),
           Text(
             'Last visit: ${DateFormat('MMM d, yyyy').format(patient.lastVisit)}',
-            style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
+            style: const TextStyle(
+                fontSize: 11, color: AppTheme.textLight),
           ),
           const Spacer(),
           if (patient.diagnosis.isNotEmpty)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: AppTheme.primaryLighter,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Text(
-                'Active',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: AppTheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              child: const Text('Active',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w600)),
             ),
         ],
       ),
@@ -249,19 +239,18 @@ class PatientCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
-      ),
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(6)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 11, color: color),
           const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-                fontSize: 11, color: color, fontWeight: FontWeight.w500),
-          ),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11,
+                  color: color,
+                  fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -314,31 +303,23 @@ class StatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(10),
-            ),
+                color: bg, borderRadius: BorderRadius.circular(10)),
             child: Icon(icon, color: color, size: 20),
           ),
           const SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: color,
-              height: 1,
-            ),
-          ),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                  height: 1)),
           const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.textLight,
-              fontWeight: FontWeight.w500,
-            ),
-            maxLines: 2,
-          ),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textLight,
+                  fontWeight: FontWeight.w500),
+              maxLines: 2),
         ],
       ),
     );
@@ -373,9 +354,8 @@ class InfoTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10)),
             child: Icon(icon, size: 18, color: color),
           ),
           const SizedBox(width: 14),
@@ -383,24 +363,20 @@ class InfoTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.textLight,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textLight,
+                        fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
                 Text(
                   value.isNotEmpty ? value : 'N/A',
                   style: TextStyle(
-                    fontSize: 14,
-                    color: value.isNotEmpty
-                        ? AppTheme.textDark
-                        : AppTheme.textLight,
-                    fontWeight: FontWeight.w500,
-                  ),
+                      fontSize: 14,
+                      color: value.isNotEmpty
+                          ? AppTheme.textDark
+                          : AppTheme.textLight,
+                      fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -419,12 +395,8 @@ class SectionHeader extends StatelessWidget {
   final Widget? trailing;
   final IconData? icon;
 
-  const SectionHeader({
-    super.key,
-    required this.title,
-    this.trailing,
-    this.icon,
-  });
+  const SectionHeader(
+      {super.key, required this.title, this.trailing, this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -436,21 +408,17 @@ class SectionHeader extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.primaryLighter,
-                borderRadius: BorderRadius.circular(8),
-              ),
+                  color: AppTheme.primaryLighter,
+                  borderRadius: BorderRadius.circular(8)),
               child: Icon(icon, size: 16, color: AppTheme.primary),
             ),
             const SizedBox(width: 10),
           ],
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textDark,
-            ),
-          ),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textDark)),
           const Spacer(),
           if (trailing != null) trailing!,
         ],

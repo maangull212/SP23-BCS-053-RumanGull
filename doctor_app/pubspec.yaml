@@ -10,8 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Database
+  # Database (works on mobile + web)
   sqflite: ^2.3.0
+  sqflite_common_ffi_web: ^0.4.3+1
   path: ^1.8.3
 
   # File & Image Handling
@@ -22,12 +23,7 @@ dependencies:
   # UI & Utilities
   intl: ^0.18.1
   uuid: ^4.2.1
-  flutter_staggered_animations: ^1.1.1
-  cached_network_image: ^3.3.0
-  permission_handler: ^11.1.0
-  open_filex: ^4.3.4
   google_fonts: ^6.1.0
-  shimmer: ^3.0.0
 
   cupertino_icons: ^1.0.2
 

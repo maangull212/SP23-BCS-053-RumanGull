@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/patient.dart';
@@ -20,8 +21,14 @@ class DBHelper {
   }
 
   Future<Database> _initDB() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, _dbName);
+    String path;
+    if (kIsWeb) {
+      // On web, sqflite_common_ffi_web uses IndexedDB; path is just the db name
+      path = _dbName;
+    } else {
+      final dbPath = await getDatabasesPath();
+      path = join(dbPath, _dbName);
+    }
 
     return await openDatabase(
       path,
@@ -54,14 +61,10 @@ class DBHelper {
         is_active        INTEGER DEFAULT 1
       )
     ''');
-
-    // Seed some sample patients for demo
     await _seedSampleData(db);
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Handle future migrations here
-  }
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {}
 
   Future<void> _seedSampleData(Database db) async {
     final now = DateTime.now();
@@ -81,12 +84,8 @@ class DBHelper {
         'emergency_contact': 'Mark Johnson +1 555-0102',
         'image_path': null,
         'documents': '[]',
-        'last_visit': now
-            .subtract(const Duration(days: 3))
-            .toIso8601String(),
-        'created_at': now
-            .subtract(const Duration(days: 180))
-            .toIso8601String(),
+        'last_visit': now.subtract(const Duration(days: 3)).toIso8601String(),
+        'created_at': now.subtract(const Duration(days: 180)).toIso8601String(),
         'is_active': 1,
       },
       {
@@ -104,12 +103,8 @@ class DBHelper {
         'emergency_contact': 'Linda Miller +1 555-0202',
         'image_path': null,
         'documents': '[]',
-        'last_visit': now
-            .subtract(const Duration(days: 7))
-            .toIso8601String(),
-        'created_at': now
-            .subtract(const Duration(days: 365))
-            .toIso8601String(),
+        'last_visit': now.subtract(const Duration(days: 7)).toIso8601String(),
+        'created_at': now.subtract(const Duration(days: 365)).toIso8601String(),
         'is_active': 1,
       },
       {
@@ -127,12 +122,8 @@ class DBHelper {
         'emergency_contact': 'Wei Chen +1 555-0302',
         'image_path': null,
         'documents': '[]',
-        'last_visit': now
-            .subtract(const Duration(days: 14))
-            .toIso8601String(),
-        'created_at': now
-            .subtract(const Duration(days: 90))
-            .toIso8601String(),
+        'last_visit': now.subtract(const Duration(days: 14)).toIso8601String(),
+        'created_at': now.subtract(const Duration(days: 90)).toIso8601String(),
         'is_active': 1,
       },
     ];
@@ -142,19 +133,14 @@ class DBHelper {
     }
   }
 
-  // ── CRUD Operations ───────────────────────────────────────
-
-  /// Insert a new patient. Returns the new row id.
+  // ── CRUD ──────────────────────────────────────────────────
   Future<int> insertPatient(Patient patient) async {
     final db = await database;
-    return await db.insert(
-      tablePatients,
-      patient.toMap()..remove('id'),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final map = patient.toMap()..remove('id');
+    return await db.insert(tablePatients, map,
+        conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  /// Fetch all patients (active only by default).
   Future<List<Patient>> getAllPatients({bool activeOnly = true}) async {
     final db = await database;
     final maps = await db.query(
@@ -166,19 +152,13 @@ class DBHelper {
     return maps.map(Patient.fromMap).toList();
   }
 
-  /// Fetch a single patient by id.
   Future<Patient?> getPatientById(int id) async {
     final db = await database;
-    final maps = await db.query(
-      tablePatients,
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
+    final maps = await db.query(tablePatients,
+        where: 'id = ?', whereArgs: [id], limit: 1);
     return maps.isNotEmpty ? Patient.fromMap(maps.first) : null;
   }
 
-  /// Search patients by name or phone.
   Future<List<Patient>> searchPatients(String query) async {
     final db = await database;
     final like = '%${query.toLowerCase()}%';
@@ -192,76 +172,50 @@ class DBHelper {
     return maps.map(Patient.fromMap).toList();
   }
 
-  /// Update an existing patient record.
   Future<int> updatePatient(Patient patient) async {
     final db = await database;
-    return await db.update(
-      tablePatients,
-      patient.toMap(),
-      where: 'id = ?',
-      whereArgs: [patient.id],
-    );
+    return await db.update(tablePatients, patient.toMap(),
+        where: 'id = ?', whereArgs: [patient.id]);
   }
 
-  /// Soft-delete a patient (sets is_active = 0).
-  Future<int> softDeletePatient(int id) async {
-    final db = await database;
-    return await db.update(
-      tablePatients,
-      {'is_active': 0},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  /// Hard-delete a patient (permanent).
   Future<int> hardDeletePatient(int id) async {
     final db = await database;
-    return await db.delete(
-      tablePatients,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db
+        .delete(tablePatients, where: 'id = ?', whereArgs: [id]);
   }
-
-  // ── Statistics ────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getStats() async {
     final db = await database;
 
-    final totalResult = await db.rawQuery(
-        'SELECT COUNT(*) as count FROM $tablePatients WHERE is_active = 1');
-    final total = totalResult.first['count'] as int;
+    final total = (await db.rawQuery(
+            'SELECT COUNT(*) as c FROM $tablePatients WHERE is_active = 1'))
+        .first['c'] as int;
 
     final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-    final todayResult = await db.rawQuery(
-      "SELECT COUNT(*) as count FROM $tablePatients WHERE last_visit LIKE '$todayStr%' AND is_active = 1",
-    );
-    final todayVisits = todayResult.first['count'] as int;
+    final todayVisits = (await db.rawQuery(
+            "SELECT COUNT(*) as c FROM $tablePatients WHERE last_visit LIKE '$todayStr%' AND is_active = 1"))
+        .first['c'] as int;
 
-    final maleResult = await db.rawQuery(
-        "SELECT COUNT(*) as count FROM $tablePatients WHERE gender = 'Male' AND is_active = 1");
-    final femaleResult = await db.rawQuery(
-        "SELECT COUNT(*) as count FROM $tablePatients WHERE gender = 'Female' AND is_active = 1");
+    final male = (await db.rawQuery(
+            "SELECT COUNT(*) as c FROM $tablePatients WHERE gender = 'Male' AND is_active = 1"))
+        .first['c'] as int;
+
+    final female = (await db.rawQuery(
+            "SELECT COUNT(*) as c FROM $tablePatients WHERE gender = 'Female' AND is_active = 1"))
+        .first['c'] as int;
 
     final weekAgo =
         DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
-    final weekResult = await db.rawQuery(
-      "SELECT COUNT(*) as count FROM $tablePatients WHERE last_visit >= '$weekAgo' AND is_active = 1",
-    );
+    final weeklyVisits = (await db.rawQuery(
+            "SELECT COUNT(*) as c FROM $tablePatients WHERE last_visit >= '$weekAgo' AND is_active = 1"))
+        .first['c'] as int;
 
     return {
       'total': total,
       'todayVisits': todayVisits,
-      'male': maleResult.first['count'] as int,
-      'female': femaleResult.first['count'] as int,
-      'weeklyVisits': weekResult.first['count'] as int,
+      'male': male,
+      'female': female,
+      'weeklyVisits': weeklyVisits,
     };
-  }
-
-  /// Close the database connection.
-  Future<void> close() async {
-    final db = await database;
-    db.close();
   }
 }
