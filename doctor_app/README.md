@@ -46,12 +46,23 @@ flutter run
 Add to `android/app/src/main/AndroidManifest.xml` (inside `<manifest>`):
 
 ```xml
-
+<uses-permission android:name="android.permission.CAMERA"/>
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
 ```
 
 For file_picker on Android 11+, add inside `<application>`:
 ```xml
-
+<provider
+    android:name="com.mr.flutter.plugin.filepicker.FilePickerProvider"
+    android:authorities="${applicationId}.filepicker"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_picker_provider_paths"/>
+</provider>
 ```
 
 ---

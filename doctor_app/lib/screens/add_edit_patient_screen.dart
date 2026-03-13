@@ -1,17 +1,35 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
-import 'dart:convert';
 import '../database/db_helper.dart';
 import '../models/patient.dart';
 import '../theme/app_theme.dart';
 
+/// Safely resolves a storage subdirectory using path_provider via MethodChannel.
+/// Returns null (instead of throwing) when the plugin is not linked yet.
+Future<String?> _resolveStorageDir(String subFolder) async {
+  try {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final String? base =
+        await channel.invokeMethod('getApplicationDocumentsDirectory');
+    if (base == null) return null;
+    final dir = Directory(p.join(base, subFolder));
+    await dir.create(recursive: true);
+    return dir.path;
+  } on MissingPluginException {
+    return null; // Plugin not linked — caller will show a helpful message
+  } catch (_) {
+    return null;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 class AddEditPatientScreen extends StatefulWidget {
   final Patient? patient;
   const AddEditPatientScreen({super.key, this.patient});
@@ -40,21 +58,17 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   final _allergiesCtrl = TextEditingController();
   final _emergencyCtrl = TextEditingController();
 
-  // Dropdowns
   String _gender = 'Male';
   String _bloodGroup = 'A+';
-
-  // Files
   String? _imagePath;
   List<String> _documents = [];
   DateTime _lastVisit = DateTime.now();
+  int _currentStep = 0;
 
   final List<String> _genders = ['Male', 'Female', 'Other'];
   final List<String> _bloodGroups = [
     'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
   ];
-
-  int _currentStep = 0;
 
   @override
   void initState() {
@@ -63,23 +77,23 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   }
 
   void _populateFields() {
-    final p = widget.patient!;
-    _nameCtrl.text = p.name;
-    _ageCtrl.text = p.age.toString();
-    _phoneCtrl.text = p.phone;
-    _emailCtrl.text = p.email;
-    _addressCtrl.text = p.address;
-    _historyCtrl.text = p.medicalHistory;
-    _diagnosisCtrl.text = p.diagnosis;
-    _medsCtrl.text = p.medications;
-    _allergiesCtrl.text = p.allergies;
-    _emergencyCtrl.text = p.emergencyContact;
-    _gender = p.gender;
-    _bloodGroup = p.bloodGroup;
-    _imagePath = p.imagePath;
-    _lastVisit = p.lastVisit;
+    final pat = widget.patient!;
+    _nameCtrl.text = pat.name;
+    _ageCtrl.text = pat.age.toString();
+    _phoneCtrl.text = pat.phone;
+    _emailCtrl.text = pat.email;
+    _addressCtrl.text = pat.address;
+    _historyCtrl.text = pat.medicalHistory;
+    _diagnosisCtrl.text = pat.diagnosis;
+    _medsCtrl.text = pat.medications;
+    _allergiesCtrl.text = pat.allergies;
+    _emergencyCtrl.text = pat.emergencyContact;
+    _gender = pat.gender;
+    _bloodGroup = pat.bloodGroup;
+    _imagePath = pat.imagePath;
+    _lastVisit = pat.lastVisit;
     try {
-      _documents = List<String>.from(jsonDecode(p.documents));
+      _documents = List<String>.from(jsonDecode(pat.documents));
     } catch (_) {
       _documents = [];
     }
@@ -89,7 +103,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   void dispose() {
     for (final c in [
       _nameCtrl, _ageCtrl, _phoneCtrl, _emailCtrl, _addressCtrl,
-      _historyCtrl, _diagnosisCtrl, _medsCtrl, _allergiesCtrl, _emergencyCtrl
+      _historyCtrl, _diagnosisCtrl, _medsCtrl, _allergiesCtrl, _emergencyCtrl,
     ]) {
       c.dispose();
     }
@@ -99,7 +113,6 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
   // ── Save ──────────────────────────────────────────────────
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) {
-      // Jump to first error step
       setState(() => _currentStep = 0);
       return;
     }
@@ -130,19 +143,16 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
         await _db.insertPatient(patient);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '${_isEditing ? 'Updated' : 'Added'} ${patient.name} successfully'),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${_isEditing ? 'Updated' : 'Added'} ${patient.name} successfully'),
+        ));
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error saving: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -165,13 +175,12 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: AppTheme.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: AppTheme.divider,
+                  borderRadius: BorderRadius.circular(2)),
             ),
             const Text('Select Photo',
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700)),
+                style:
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
             _sourceBtn(Icons.camera_alt_outlined, 'Take a Photo',
                 ImageSource.camera),
@@ -182,24 +191,30 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
         ),
       ),
     );
-    if (src == null) return;
+    if (src == null || !mounted) return;
 
     try {
-      final picked = await ImagePicker().pickImage(
-          source: src, maxWidth: 800, maxHeight: 800, imageQuality: 80);
+      final picked = await ImagePicker()
+          .pickImage(source: src, maxWidth: 800, maxHeight: 800, imageQuality: 80);
       if (picked == null) return;
 
-      final dir = await getApplicationDocumentsDirectory();
-      final dest = p.join(dir.path, 'patients', 'img');
-      await Directory(dest).create(recursive: true);
-      final fileName = '${_uuid.v4()}${p.extension(picked.path)}';
-      final saved = await File(picked.path).copy(p.join(dest, fileName));
-      setState(() => _imagePath = saved.path);
+      // Attempt to save a persistent copy; falls back to temp path gracefully
+      final destDir = await _resolveStorageDir('patients/img');
+      String savedPath;
+      if (destDir != null) {
+        final fileName = '${_uuid.v4()}${p.extension(picked.path)}';
+        final saved = await File(picked.path).copy(p.join(destDir, fileName));
+        savedPath = saved.path;
+      } else {
+        savedPath = picked.path;
+        _warnPluginNotLinked();
+      }
+
+      setState(() => _imagePath = savedPath);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Image error: $e')));
       }
     }
   }
@@ -210,14 +225,15 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppTheme.primaryLighter,
-          borderRadius: BorderRadius.circular(10),
-        ),
+            color: AppTheme.primaryLighter,
+            borderRadius: BorderRadius.circular(10)),
         child: Icon(icon, color: AppTheme.primary),
       ),
       title: Text(label,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          style:
+              const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       tileColor: AppTheme.bgLight,
     );
   }
@@ -232,24 +248,42 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       );
       if (result == null) return;
 
-      final dir = await getApplicationDocumentsDirectory();
-      final dest = p.join(dir.path, 'patients', 'docs');
-      await Directory(dest).create(recursive: true);
+      final destDir = await _resolveStorageDir('patients/docs');
+      bool warned = false;
 
       for (final file in result.files) {
         if (file.path == null) continue;
-        final fileName = '${_uuid.v4()}_${file.name}';
-        final saved =
-            await File(file.path!).copy(p.join(dest, fileName));
-        setState(() => _documents.add(saved.path));
+        String finalPath;
+        if (destDir != null) {
+          final fileName = '${_uuid.v4()}_${file.name}';
+          final saved =
+              await File(file.path!).copy(p.join(destDir, fileName));
+          finalPath = saved.path;
+        } else {
+          finalPath = file.path!;
+          if (!warned) {
+            warned = true;
+            _warnPluginNotLinked();
+          }
+        }
+        setState(() => _documents.add(finalPath));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('File error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('File error: $e')));
       }
     }
+  }
+
+  void _warnPluginNotLinked() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text(
+          '⚠️ Fix: run  flutter clean && flutter pub get && flutter run'),
+      duration: Duration(seconds: 5),
+      backgroundColor: AppTheme.warning,
+    ));
   }
 
   // ── Date Picker ───────────────────────────────────────────
@@ -261,7 +295,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(primary: AppTheme.primary),
+          colorScheme:
+              const ColorScheme.light(primary: AppTheme.primary),
         ),
         child: child!,
       ),
@@ -293,13 +328,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
                 onStepCancel: () {
                   if (_currentStep > 0) setState(() => _currentStep--);
                 },
-                controlsBuilder: (_, details) =>
-                    _stepControls(details),
-                steps: [
-                  _buildStep1(),
-                  _buildStep2(),
-                  _buildStep3(),
-                ],
+                controlsBuilder: (_, d) => _stepControls(d),
+                steps: [_buildStep1(), _buildStep2(), _buildStep3()],
               ),
             ),
           ),
@@ -320,7 +350,9 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       title: Text(
         _isEditing ? 'Edit Patient' : 'New Patient',
         style: const TextStyle(
-            color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700),
       ),
       actions: [
         if (_saving)
@@ -330,8 +362,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
               child: SizedBox(
                   width: 20,
                   height: 20,
-                  child:
-                      CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2)),
             ),
           )
         else
@@ -347,30 +379,27 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  // ── Step Controls ─────────────────────────────────────────
-  Widget _stepControls(ControlsDetails details) {
+  Widget _stepControls(ControlsDetails d) {
     final isLast = _currentStep == 2;
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Row(
         children: [
           ElevatedButton(
-            onPressed: details.onStepContinue,
+            onPressed: d.onStepContinue,
             child: Text(isLast ? 'Save Patient' : 'Continue'),
           ),
           if (_currentStep > 0) ...[
             const SizedBox(width: 12),
             OutlinedButton(
-              onPressed: details.onStepCancel,
-              child: const Text('Back'),
-            ),
+                onPressed: d.onStepCancel, child: const Text('Back')),
           ],
         ],
       ),
     );
   }
 
-  // ── Step 1: Personal Info ─────────────────────────────────
+  // ── Step 1 ────────────────────────────────────────────────
   Step _buildStep1() {
     return Step(
       title: const Text('Personal Info',
@@ -379,51 +408,43 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       state: _currentStep > 0 ? StepState.complete : StepState.indexed,
       content: Column(
         children: [
-          // Photo
           Center(child: _photoWidget()),
           const SizedBox(height: 20),
           _field('Full Name', _nameCtrl, Icons.person_outline,
               validator: (v) =>
                   v == null || v.isEmpty ? 'Name is required' : null),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _field(
-                  'Age',
-                  _ageCtrl,
-                  Icons.cake_outlined,
+          Row(children: [
+            Expanded(
+              child: _field('Age', _ageCtrl, Icons.cake_outlined,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Required';
-                    final age = int.tryParse(v);
-                    if (age == null || age < 0 || age > 150) return 'Invalid';
+                    final a = int.tryParse(v);
+                    if (a == null || a < 0 || a > 150) return 'Invalid';
                     return null;
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: _dropdown('Gender', _gender, _genders,
-                  (v) => setState(() => _gender = v!))),
-            ],
-          ),
+                  }),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _dropdown('Gender', _gender, _genders,
+                    (v) => setState(() => _gender = v!))),
+          ]),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _field('Phone', _phoneCtrl, Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                    validator: (v) => v == null || v.isEmpty
-                        ? 'Phone is required'
-                        : null),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: _dropdown('Blood Group', _bloodGroup, _bloodGroups,
-                      (v) => setState(() => _bloodGroup = v!))),
-            ],
-          ),
+          Row(children: [
+            Expanded(
+              child: _field('Phone', _phoneCtrl, Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                  validator: (v) => v == null || v.isEmpty
+                      ? 'Phone is required'
+                      : null),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+                child: _dropdown('Blood Group', _bloodGroup, _bloodGroups,
+                    (v) => setState(() => _bloodGroup = v!))),
+          ]),
           const SizedBox(height: 14),
           _field('Email', _emailCtrl, Icons.email_outlined,
               keyboardType: TextInputType.emailAddress),
@@ -438,7 +459,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  // ── Step 2: Medical Info ──────────────────────────────────
+  // ── Step 2 ────────────────────────────────────────────────
   Step _buildStep2() {
     return Step(
       title: const Text('Medical Info',
@@ -447,20 +468,22 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       state: _currentStep > 1 ? StepState.complete : StepState.indexed,
       content: Column(
         children: [
-          _field('Diagnosis', _diagnosisCtrl, Icons.medical_information_outlined,
+          _field('Diagnosis', _diagnosisCtrl,
+              Icons.medical_information_outlined,
               maxLines: 2),
           const SizedBox(height: 14),
-          _field('Medical History', _historyCtrl, Icons.history_edu_outlined,
+          _field('Medical History', _historyCtrl,
+              Icons.history_edu_outlined,
               maxLines: 3),
           const SizedBox(height: 14),
           _field('Medications', _medsCtrl, Icons.medication_outlined,
               maxLines: 3,
-              hintText: 'e.g. Aspirin 81mg daily, Metformin 500mg twice daily'),
+              hintText:
+                  'e.g. Aspirin 81mg daily, Metformin 500mg twice daily'),
           const SizedBox(height: 14),
           _field('Allergies', _allergiesCtrl, Icons.warning_amber_outlined,
               hintText: 'e.g. Penicillin, Sulfa drugs'),
           const SizedBox(height: 14),
-          // Last visit date
           GestureDetector(
             onTap: _pickDate,
             child: Container(
@@ -505,7 +528,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  // ── Step 3: Documents ─────────────────────────────────────
+  // ── Step 3 ────────────────────────────────────────────────
   Step _buildStep3() {
     return Step(
       title: const Text('Documents',
@@ -520,7 +543,6 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
             style: TextStyle(fontSize: 12, color: AppTheme.textLight),
           ),
           const SizedBox(height: 16),
-          // Upload button
           OutlinedButton.icon(
             onPressed: _pickDocument,
             icon: const Icon(Icons.upload_file_rounded, size: 18),
@@ -533,27 +555,23 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          // Document list
           if (_documents.isEmpty)
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: AppTheme.bgLight,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: AppTheme.divider, style: BorderStyle.solid),
+                border: Border.all(color: AppTheme.divider),
               ),
               child: const Center(
-                child: Column(
-                  children: [
-                    Icon(Icons.folder_open_outlined,
-                        size: 36, color: AppTheme.textLight),
-                    SizedBox(height: 8),
-                    Text('No documents uploaded',
-                        style: TextStyle(
-                            fontSize: 13, color: AppTheme.textLight)),
-                  ],
-                ),
+                child: Column(children: [
+                  Icon(Icons.folder_open_outlined,
+                      size: 36, color: AppTheme.textLight),
+                  SizedBox(height: 8),
+                  Text('No documents uploaded',
+                      style: TextStyle(
+                          fontSize: 13, color: AppTheme.textLight)),
+                ]),
               ),
             )
           else
@@ -570,11 +588,10 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
     );
   }
 
-  Widget _docTile(int index, String path) {
-    final name = p.basename(path);
-    final ext = p.extension(path).toLowerCase();
+  Widget _docTile(int index, String filePath) {
+    final name = p.basename(filePath);
+    final ext = p.extension(filePath).toLowerCase();
     final isImage = ['.jpg', '.jpeg', '.png'].contains(ext);
-
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -588,28 +605,23 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
           Container(
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
-              color: AppTheme.primaryLighter,
-              borderRadius: BorderRadius.circular(8),
-            ),
+                color: AppTheme.primaryLighter,
+                borderRadius: BorderRadius.circular(8)),
             child: Icon(
-              isImage
-                  ? Icons.image_outlined
-                  : Icons.picture_as_pdf_outlined,
+              isImage ? Icons.image_outlined : Icons.picture_as_pdf_outlined,
               size: 18,
               color: AppTheme.primary,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textDark,
-                  fontWeight: FontWeight.w500),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(name,
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textDark,
+                    fontWeight: FontWeight.w500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
           ),
           IconButton(
             icon: const Icon(Icons.close_rounded,
@@ -639,8 +651,7 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
               image: _imagePath != null
                   ? DecorationImage(
                       image: FileImage(File(_imagePath!)),
-                      fit: BoxFit.cover,
-                    )
+                      fit: BoxFit.cover)
                   : null,
               boxShadow: AppTheme.cardShadow,
             ),
@@ -655,10 +666,9 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.accent,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
+                  color: AppTheme.accent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2)),
               child: const Icon(Icons.camera_alt_rounded,
                   size: 14, color: Colors.white),
             ),
@@ -700,9 +710,8 @@ class _AddEditPatientScreenState extends State<AddEditPatientScreen> {
       onChanged: onChanged,
       decoration: InputDecoration(labelText: label),
       borderRadius: BorderRadius.circular(12),
-      items: items
-          .map((i) => DropdownMenuItem(value: i, child: Text(i)))
-          .toList(),
+      items:
+          items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
     );
   }
 }
