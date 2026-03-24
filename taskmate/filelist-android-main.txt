@@ -1,0 +1,12 @@
+AndroidManifest.xml
+java\io\flutter\plugins\GeneratedPluginRegistrant.java
+kotlin\com\rumangull\taskmate\MainActivity.kt
+res\drawable\launch_background.xml
+res\drawable-v21\launch_background.xml
+res\mipmap-hdpi\ic_launcher.png
+res\mipmap-mdpi\ic_launcher.png
+res\mipmap-xhdpi\ic_launcher.png
+res\mipmap-xxhdpi\ic_launcher.png
+res\mipmap-xxxhdpi\ic_launcher.png
+res\values\styles.xml
+res\values-night\styles.xml
