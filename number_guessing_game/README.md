@@ -17,8 +17,8 @@ Developed By: Ruman Gull- A Flutter Developer
 
 ## 📱 Screenshots
 
-| Home Screen | Game Screen | Hint Feedback | Game Over |
-|:-----------:|:-----------:|:-------------:|:---------:|
+| Home Screen | Game Screen | Hint Feedback | Remaining Attempts | Game Over | 
+|:-----------:|:-----------:|:-------------:|:------------------:|----------:|
 | ![Home](screenshots/home.png) | ![Game](screenshots/game.png) | ![Hint](screenshots/hint.png) | ![Hint](screenshots/remain_attempts.png)| ![Result](screenshots/result.png) |
 
 ---
